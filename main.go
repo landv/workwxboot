@@ -116,6 +116,15 @@ func main() {
 				log.Fatalf("stop service error:%s\n", err.Error())
 			}
 			return
+		case "status":
+			fmt.Println(s.Status())
+			return
+		case "restart":
+			err:=s.Restart()
+			if err != nil {
+				log.Fatalf("Restart service error:%s\n", err.Error())
+			}
+			return
 		}
 	}
 	err = s.Run()
