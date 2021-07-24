@@ -76,7 +76,7 @@ func main() {
 	// demo
 	//aa := getGateData()
 	//fmt.Println(aa)
-	getDataFromTheDatabase()
+	//getDataFromTheDatabase()
 
 	// 拦截panic 直接不输出
 	defer func() {
@@ -183,36 +183,41 @@ func connectToTheDatabase() {
 
 func getDataFromTheDatabase() {
 
-	// 先解析
-	stmt, err := db.Prepare(`SELECT  项目名称,项目编码 FROM Twb_info;`)
-	if err != nil {
-		log.Printf("\nPrepare failed:%T %+v\n", err, err)
-	}
-	//QueryRow TMD是读取单条记录
-	rows, err := stmt.Query()
-	if err != nil {
-		fmt.Println("Error reading rows: " + err.Error())
-	}
-	defer stmt.Close()
-
-	count := 0
-	for rows.Next() {
-		var 项目名称 string
-		var 项目编码 string
-		err := rows.Scan(&项目名称, &项目编码)
-		if err != nil {
-			log.Fatal("Scan failed:", err.Error())
-		}
-		fmt.Println(项目名称, 项目编码)
-		count++
-	}
+	//// 先解析
+	//stmt, err := db.Prepare(`SELECT  项目名称,项目编码 FROM Twb_info;`)
+	//if err != nil {
+	//	log.Printf("\nPrepare failed:%T %+v\n", err, err)
+	//}
+	////QueryRow TMD是读取单条记录
+	//rows, err := stmt.Query()
+	//if err != nil {
+	//	fmt.Println("Error reading rows: " + err.Error())
+	//}
+	//defer stmt.Close()
+	//
+	//count := 0
+	//for rows.Next() {
+	//	var 项目名称 string
+	//	var 项目编码 string
+	//	err := rows.Scan(&项目名称, &项目编码)
+	//	if err != nil {
+	//		log.Fatal("Scan failed:", err.Error())
+	//	}
+	//	fmt.Println(项目名称, 项目编码)
+	//	count++
+	//}
 
 	// 获取数据
 
 	// 发送数据
 	qingqingRanchIncomeDaily()
+	//fmt.Println(getProductSalesData())
 }
 
+var (
+	turnstile float64
+	sell	float64
+)
 
 /****
 -- 报表清单 需要调用存储过程
@@ -241,7 +246,7 @@ func getGateData() (sa string) {
 	bbb.*,
 	(bbb.价格 * bbb.数量)as 总价
 from
-(select abcd.项目名称,sum(abcd.价格)as 价格 ,COUNT(abcd.价格) as 数量  from (SELECT 
+(select abcd.项目名称,abcd.价格 ,COUNT(abcd.价格) as 数量  from (SELECT 
         CASE WHEN LEN(GFA.SREMARK) = 18 THEN GFA.SREMARK 
 		WHEN LEN(GFTOD.BindCard) = 18 THEN GFTOD.BindCard 
 		WHEN TWB.TWB_MSG = 'IDCARD' AND LEN(TWB.TWB_ID) = 18 THEN TWB.TWB_ID 
@@ -321,7 +326,7 @@ from
 	TWB.TWB_SYSTIME BETWEEN '%v' AND '%v'  
 	--order by  TWB.TWB_SYSTIME
 	)abcd
-	GROUP by abcd.项目名称
+	GROUP by abcd.项目名称 ,abcd.价格
 	)bbb`, startingTime, endTime))
 	if err != nil {
 		log.Printf("\nPrepare failed:%T %+v\n", err, err)
@@ -353,15 +358,82 @@ from
 		//fmt.Println("i",i)
 		总人数 += i
 		sa += fmt.Sprintf(">%v—数量:<font color=\"info\">%v</font>张,合计:<font color=\"info\">%v</font>元 \n", 项目名称, 数量, 总价)
+		小计,_ :=strconv.ParseFloat(总价, 32)
+		turnstile+=小计
 		count++
 	}
-	sa += fmt.Sprintf(">总人数合计：<font color=\"info\">%d</font>人 \n", 总人数)
+	sa += fmt.Sprintf(">人数小计：<font color=\"info\">%d</font>人 金额小计：<font color=\"info\">%v</font>元\n", 总人数,turnstile)
+
+
 	return
 }
 
+
 // 获取商品售卖数据
-func getProductSalesData()  {
-	
+func getProductSalesData() (sa string) {
+	// 先解析
+	startingTime := time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
+	endTime := time.Now().Format("2006-01-02 00:00:00")
+	stmt, err := db.Prepare(fmt.Sprintf(`SELECT v.sgzonename 营业点,
+    CASE ls.NDEALTYPE
+    WHEN 1 THEN
+    '零售系统'
+    ELSE '餐饮系统'
+    END systype,convert(nvarchar(10), ls.DDEALDT, 121) chardate ,
+    --ls.NTERMINALID ,
+    CASE ls.ISRETURN
+    WHEN 1 THEN
+    -sum(rate.namount-isnull(rate.NRATEAMOUNT, 0))
+    ELSE sum(rate.namount-isnull(rate.NRATEAMOUNT, 0))
+    END amount 
+    --ls.NEMPID,
+    --m.SMONEYNAMECN
+FROM GS_F_DEALINFO_POS ls with(nolock) --销售主表
+LEFT JOIN GS_F_DEALRATE_POS rate with(nolock)
+    ON (ls.NTERMINALID = rate.NTERMINALID
+        AND ls.NDEALID = rate.NDEALID)
+LEFT JOIN GS_F_MONEY m with(nolock)
+    ON (m.NID = rate.NRATEID)
+LEFT JOIN V_RELATION v
+    ON ls.NTERMINALID = v.nterminalid
+WHERE ls.DDEALDT >= '%v'
+        AND ls.DDEALDT <= '%v'
+GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvarchar(7), ls.DDEALDT, 120) , convert(nvarchar(10), ls.DDEALDT, 121) , ls.NTERMINALID , ls.ISRETURN , ls.NEMPID, m.NPAYMENTTYPE `,startingTime,endTime))
+	if err != nil {
+		log.Printf("\nPrepare failed:%T %+v\n", err, err)
+	}
+	//QueryRow TMD是读取单条记录
+	rows, err := stmt.Query()
+	if err != nil {
+		fmt.Println("Error reading rows: " + err.Error())
+	}
+	defer stmt.Close()
+
+	count := 0
+	var (
+	 营业点      string
+	 systpye  string
+	 chardate string
+	 amount   string
+	 sum       float64
+	)
+
+	for rows.Next() {
+
+		err := rows.Scan(&营业点, &systpye,&chardate,&amount)
+		if err != nil {
+			log.Fatal("Scan failed:", err.Error())
+		}
+		f, _ := strconv.ParseFloat(amount, 32)
+		//println(amount)
+		//fmt.Printf("%v",f)
+		sum+=f
+		sa += fmt.Sprintf(">%v—金额:<font color=\"info\">%v</font>元 \n", 营业点, amount)
+		count++
+	}
+	sa+=fmt.Sprintf(">小计金额：<font color=\"info\">%v</font>元 \n", sum)
+	sell= sum
+	return
 }
 
 /***
@@ -377,7 +449,7 @@ func qingqingRanchIncomeDaily() {
 
 	webhook := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=cbeac157-32d9-4ec0-ab82-2e99d376ed96"
 	wxbot := workwx.NewRobot(webhook)
-	total:=1
+	//total:=1
 
 	dailyReport := fmt.Sprintf("# %v 收入详情：\n", yesTime)
 	//dailyReport += fmt.Sprintf("## 进闸机人数：<font color=\"info\">%v</font> \n", numberOfGates)
@@ -385,7 +457,10 @@ func qingqingRanchIncomeDaily() {
 	dailyReport += getGateData()
 	dailyReport += "\n"
 	dailyReport += fmt.Sprintf("## 商品售卖情况：\n")
-	dailyReport += fmt.Sprintf("# 合计：**<font color=\"warning\">%v</font>** \n", total)
+	dailyReport += "\n"
+	dailyReport+= getProductSalesData()
+	dailyReport += "\n"
+	dailyReport += fmt.Sprintf("# 合计：**<font color=\"warning\">%v</font>** \n", sell+turnstile)
 
 	fmt.Println(dailyReport)
 
@@ -393,4 +468,7 @@ func qingqingRanchIncomeDaily() {
 		MsgType:  "markdown",
 		MarkDown: workwx.BotMarkDown{Content: dailyReport}}
 	wxbot.Send(markdown)
+
+	sell=0
+	turnstile=0
 }
