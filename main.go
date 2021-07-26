@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	_ "debug/dwarf"
 	"fmt"
 	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/kardianos/service"
@@ -28,7 +29,8 @@ workwxboot.exe stop
 // 数据库连接参数变量
 var (
 	server   = "127.0.0.1"
-	port     = "1437"
+	port     = "1433"
+	//port     = "1437" // debug
 	user     = "sa"
 	password = "abc123."
 	database = "Galasys"
@@ -77,7 +79,8 @@ func main() {
 	//aa := getGateData()
 	//fmt.Println(aa)
 	//getDataFromTheDatabase()
-
+	//getDataFromTheDatabase("d")
+	//getDataFromTheDatabase("m")
 	// 拦截panic 直接不输出
 	defer func() {
 		if x := recover(); x != nil {
@@ -155,11 +158,11 @@ func scheduledTasks() {
 	// 定义定时器调用的任务函数
 	task := func() {
 		// 获取数据并发送
-		getDataFromTheDatabase()
+		getDataFromTheDatabase("d")
 		//fmt.Println("hello world", time.Now())
 	}
 	//定时任务 每天早上8:30执行
-	spec := "0 30 8 1/1 * ? *" //cron表达式
+	spec := "0 0 8 * * ? " //cron表达式
 	//spec:="*/5 * * * * ?" //cron表达式 每5秒执行一次
 	// 添加定是任务
 	crontab.AddFunc(spec, task)
@@ -167,6 +170,11 @@ func scheduledTasks() {
 	crontab.Start()
 	// 定时任务是另起协程执行的,这里使用 select 简答阻塞.实际开发中需要
 	// 根据实际情况进行控制
+	//crontab.AddFunc("*/5 * * * * ?", func() { fmt.Println("hello world", time.Now()) })
+	crontab.AddFunc("0 1 8 1 * ?", func() {
+		// 每月1日上午八点零一分获取上月整月数据
+		getDataFromTheDatabase("m")
+	})
 	select {} //阻塞主线程停止
 }
 
@@ -181,7 +189,7 @@ func connectToTheDatabase() {
 	db = conn
 }
 
-func getDataFromTheDatabase() {
+func getDataFromTheDatabase(n string) {
 
 	//// 先解析
 	//stmt, err := db.Prepare(`SELECT  项目名称,项目编码 FROM Twb_info;`)
@@ -210,13 +218,13 @@ func getDataFromTheDatabase() {
 	// 获取数据
 
 	// 发送数据
-	qingqingRanchIncomeDaily()
+	qingqingRanchIncomeDaily(n)
 	//fmt.Println(getProductSalesData())
 }
 
 var (
 	turnstile float64
-	sell	float64
+	sell      float64
 )
 
 /****
@@ -229,7 +237,7 @@ exec PRC_RM_ALLSELLTOTAL
 @v_end_Time = '2021-07-22 23:59:59',
 @v_Ohterwhere = ''
 
- */
+*/
 
 // 获取闸机数据
 /***
@@ -237,9 +245,9 @@ exec PRC_RM_ALLSELLTOTAL
 青青牧场入园礼包38,数量:<font color="info">1</font>张,合计:<font color="info">38.00</font>元
 总人数合计：<font color="info">40</font>人
 */
-func getGateData() (sa string) {
-	startingTime := time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
-	endTime := time.Now().Format("2006-01-02 00:00:00")
+func getGateData(Start, End string) (sa string) {
+	//startingTime := time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
+	//endTime := time.Now().Format("2006-01-02 00:00:00")
 	//fmt.Printf(`%v`,endTime)
 	// 先解析
 	stmt, err := db.Prepare(fmt.Sprintf(`select
@@ -323,11 +331,11 @@ from
 	LEFT JOIN GS_F_ThirdOnlineDetail GFTOD  WITH(NOLOCK) ON GFTOD.SBARCODE = GFA.SBARCODE
 
 	WHERE twb_msg <>'OUT' and TWB_MSG <> 'EMPCARD'  and 
-	TWB.TWB_SYSTIME BETWEEN '%v' AND '%v'  
+	TWB.TWB_SYSTIME >= '%v' AND TWB.TWB_SYSTIME <='%v'  
 	--order by  TWB.TWB_SYSTIME
 	)abcd
 	GROUP by abcd.项目名称 ,abcd.价格
-	)bbb`, startingTime, endTime))
+	)bbb`, Start, End))
 	if err != nil {
 		log.Printf("\nPrepare failed:%T %+v\n", err, err)
 	}
@@ -358,23 +366,46 @@ from
 		//fmt.Println("i",i)
 		总人数 += i
 		sa += fmt.Sprintf(">%v—数量:<font color=\"info\">%v</font>张,合计:<font color=\"info\">%v</font>元 \n", 项目名称, 数量, 总价)
-		小计,_ :=strconv.ParseFloat(总价, 32)
-		turnstile+=小计
+		小计, _ := strconv.ParseFloat(总价, 32)
+		turnstile += 小计
 		count++
 	}
-	sa += fmt.Sprintf(">人数小计：<font color=\"info\">%d</font>人 金额小计：<font color=\"info\">%v</font>元\n", 总人数,turnstile)
-
+	sa += fmt.Sprintf(">人数小计：<font color=\"info\">%d</font>人 金额小计：<font color=\"info\">%v</font>元\n", 总人数, turnstile)
 
 	return
 }
 
-
 // 获取商品售卖数据
-func getProductSalesData() (sa string) {
+func getProductSalesData(Start, End string) (sa string) {
 	// 先解析
-	startingTime := time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
-	endTime := time.Now().Format("2006-01-02 00:00:00")
-	stmt, err := db.Prepare(fmt.Sprintf(`SELECT v.sgzonename 营业点,
+	//startingTime := time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
+	//endTime := time.Now().Format("2006-01-02 00:00:00")
+	//	stmt, err := db.Prepare(fmt.Sprintf(`SELECT v.sgzonename 营业点,
+	//    CASE ls.NDEALTYPE
+	//    WHEN 1 THEN
+	//    '零售系统'
+	//    ELSE '餐饮系统'
+	//    END systype,convert(nvarchar(10), ls.DDEALDT, 121) chardate ,
+	//    --ls.NTERMINALID ,
+	//    CASE ls.ISRETURN
+	//    WHEN 1 THEN
+	//    -sum(rate.namount-isnull(rate.NRATEAMOUNT, 0))
+	//    ELSE sum(rate.namount-isnull(rate.NRATEAMOUNT, 0))
+	//    END amount
+	//    --ls.NEMPID,
+	//    --m.SMONEYNAMECN
+	//FROM GS_F_DEALINFO_POS ls with(nolock) --销售主表
+	//LEFT JOIN GS_F_DEALRATE_POS rate with(nolock)
+	//    ON (ls.NTERMINALID = rate.NTERMINALID
+	//        AND ls.NDEALID = rate.NDEALID)
+	//LEFT JOIN GS_F_MONEY m with(nolock)
+	//    ON (m.NID = rate.NRATEID)
+	//LEFT JOIN V_RELATION v
+	//    ON ls.NTERMINALID = v.nterminalid
+	//WHERE ls.DDEALDT >= '%v'
+	//        AND ls.DDEALDT <= '%v'
+	//GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvarchar(7), ls.DDEALDT, 120) , convert(nvarchar(10), ls.DDEALDT, 121) , ls.NTERMINALID , ls.ISRETURN , ls.NEMPID, m.NPAYMENTTYPE `,Start, End))
+	stmt, err := db.Prepare(fmt.Sprintf(`SELECT abcd.营业点,abcd.systype,sum(abcd.amount) from (SELECT v.sgzonename 营业点,
     CASE ls.NDEALTYPE
     WHEN 1 THEN
     '零售系统'
@@ -398,7 +429,10 @@ LEFT JOIN V_RELATION v
     ON ls.NTERMINALID = v.nterminalid
 WHERE ls.DDEALDT >= '%v'
         AND ls.DDEALDT <= '%v'
-GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvarchar(7), ls.DDEALDT, 120) , convert(nvarchar(10), ls.DDEALDT, 121) , ls.NTERMINALID , ls.ISRETURN , ls.NEMPID, m.NPAYMENTTYPE `,startingTime,endTime))
+GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvarchar(7), ls.DDEALDT, 120) , convert(nvarchar(10), ls.DDEALDT, 121) ,
+ls.NTERMINALID , ls.ISRETURN , ls.NEMPID, m.NPAYMENTTYPE) abcd
+GROUP BY abcd.营业点,abcd.systype`, Start, End))
+
 	if err != nil {
 		log.Printf("\nPrepare failed:%T %+v\n", err, err)
 	}
@@ -411,28 +445,28 @@ GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvar
 
 	count := 0
 	var (
-	 营业点      string
-	 systpye  string
-	 chardate string
-	 amount   string
-	 sum       float64
+		营业点     string
+		systpye string
+		//chardate string
+		amount string
+		sum    float64
 	)
 
 	for rows.Next() {
 
-		err := rows.Scan(&营业点, &systpye,&chardate,&amount)
+		err := rows.Scan(&营业点, &systpye, &amount)
 		if err != nil {
 			log.Fatal("Scan failed:", err.Error())
 		}
 		f, _ := strconv.ParseFloat(amount, 32)
 		//println(amount)
 		//fmt.Printf("%v",f)
-		sum+=f
+		sum += f
 		sa += fmt.Sprintf(">%v—金额:<font color=\"info\">%v</font>元 \n", 营业点, amount)
 		count++
 	}
-	sa+=fmt.Sprintf(">小计金额：<font color=\"info\">%v</font>元 \n", sum)
-	sell= sum
+	sa += fmt.Sprintf(">小计金额：<font color=\"info\">%v</font>元 \n", sum)
+	sell = sum
 	return
 }
 
@@ -442,23 +476,48 @@ qingqingRanchIncomeDaily 青青牧场收入日报
 门票售卖 ticketSales
 商品售卖 merchandiseSale
 */
-func qingqingRanchIncomeDaily() {
-	// 获取上一天日期
-	yesTime := time.Now().AddDate(0, 0, -1).Format("2006年01月02日")
-	//fmt.Println(yesTime)
+func qingqingRanchIncomeDaily(n string) {
+	var (
+		Start       string
+		End         string
+		dailyReport string
+	)
+
+	switch n {
+	case "d":
+		// 获取上一天日期
+		yesTime := time.Now().AddDate(0, 0, -1).Format("2006年01月02日")
+		dailyReport = fmt.Sprintf("# %v 收入详情：\n", yesTime)
+		Start = time.Now().AddDate(0, 0, -1).Format("2006-01-02 00:00:00")
+		End = time.Now().Format("2006-01-02 00:00:00")
+		println("start:", Start, "End:", End)
+	case "m":
+		// 得到年月
+		y, m, _ := time.Now().Date()
+		// 本月第一天
+		z := time.Date(y, m, 1, 0, 0, 0, 0, time.Local)
+		//thisMonth =z.Format(DATE_FORMAT)
+		// 上月第一天
+		Start = z.AddDate(0, -1, 0).Format("2006-01-02 00:00:00")
+		// 上月最后一天
+		//End = z.AddDate(0, 0, -1).Format(DATE_FORMAT)
+		End = z.Format("2006-01-02 00:00:00")
+		// 上个月收入
+		dailyReport = fmt.Sprintf("# %v 收入详情：\n", z.AddDate(0, -1, 0).Format("2006年1月")) // 2021年6月
+
+		println("start:", Start, "End:", End)
+	}
 
 	webhook := "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=cbeac157-32d9-4ec0-ab82-2e99d376ed96"
 	wxbot := workwx.NewRobot(webhook)
-	//total:=1
 
-	dailyReport := fmt.Sprintf("# %v 收入详情：\n", yesTime)
 	//dailyReport += fmt.Sprintf("## 进闸机人数：<font color=\"info\">%v</font> \n", numberOfGates)
 	dailyReport += fmt.Sprintf("## 门票售卖情况：\n")
-	dailyReport += getGateData()
+	dailyReport += getGateData(Start, End)
 	dailyReport += "\n"
 	dailyReport += fmt.Sprintf("## 商品售卖情况：\n")
 	dailyReport += "\n"
-	dailyReport+= getProductSalesData()
+	dailyReport += getProductSalesData(Start, End)
 	dailyReport += "\n"
 	dailyReport += fmt.Sprintf("# 合计：**<font color=\"warning\">%v</font>** \n", sell+turnstile)
 
@@ -469,6 +528,8 @@ func qingqingRanchIncomeDaily() {
 		MarkDown: workwx.BotMarkDown{Content: dailyReport}}
 	wxbot.Send(markdown)
 
-	sell=0
-	turnstile=0
+	sell = 0
+	turnstile = 0
+	dailyReport = ""
+
 }
