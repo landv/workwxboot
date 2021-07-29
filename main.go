@@ -8,6 +8,8 @@ import (
 	"github.com/kardianos/service"
 	"github.com/robfig/cron/v3"
 	"log"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"time"
@@ -29,8 +31,8 @@ workwxboot.exe stop
 // 数据库连接参数变量
 var (
 	server = "127.0.0.1"
-	//port     = "1433"
-	port     = "1437" // debug
+	port   = "1433"
+	//port     = "1437" // debug
 	user     = "sa"
 	password = "abc123."
 	database = "Galasys"
@@ -74,17 +76,24 @@ func (p *program) Stop(s service.Service) error {
 // endregion
 
 func main() {
-
-	// demo
-	//aa := getGateData()
-	//fmt.Println(aa)
-	//getDataFromTheDatabase()
-	//getDataFromTheDatabase("d")
-	//getDataFromTheDatabase("m")
+	//qingqingRanchIncomeDaily("d")
+	//qingqingRanchIncomeDaily("m")
 	// 拦截panic 直接不输出
 	defer func() {
 		if x := recover(); x != nil {
 			//处理panic, 让程序从panicking状态恢复的机会
+			msg := fmt.Sprintf("http://wxpusher.zjiecode.com/api/send/message/?appToken=AT_aZOf3h6RBktYbv1PZb7hlO6hkZshnF1k&content=%v&uid=UID_HYaLvrViOHGJmYWUp5lm5gADUOQe", url.QueryEscape("青青牧场企业微信机器人异常终止"))
+			re, err := http.Get(msg)
+			if err != nil {
+				return
+			}
+			defer re.Body.Close()
+			//body,err :=ioutil.ReadAll(re.Body)
+			//fmt.Println(string(body))
+			//fmt.Println(re.StatusCode)
+			//if re.StatusCode==200 {
+			//	fmt.Println("ok")
+			//}
 			os.Exit(0)
 		}
 	}()
@@ -158,7 +167,7 @@ func scheduledTasks() {
 	// 定义定时器调用的任务函数
 	task := func() {
 		// 获取数据并发送
-		getDataFromTheDatabase("d")
+		qingqingRanchIncomeDaily("d")
 		//fmt.Println("hello world", time.Now())
 	}
 	//定时任务 每天早上8:30执行
@@ -173,7 +182,7 @@ func scheduledTasks() {
 	//crontab.AddFunc("*/5 * * * * ?", func() { fmt.Println("hello world", time.Now()) })
 	crontab.AddFunc("0 1 8 1 * ?", func() {
 		// 每月1日上午八点零一分获取上月整月数据
-		getDataFromTheDatabase("m")
+		qingqingRanchIncomeDaily("m")
 	})
 	select {} //阻塞主线程停止
 }
@@ -187,40 +196,6 @@ func connectToTheDatabase() {
 		log.Println("数据库连接失败")
 	}
 	db = conn
-}
-
-func getDataFromTheDatabase(n string) {
-
-	//// 先解析
-	//stmt, err := db.Prepare(`SELECT  项目名称,项目编码 FROM Twb_info;`)
-	//if err != nil {
-	//	log.Printf("\nPrepare failed:%T %+v\n", err, err)
-	//}
-	////QueryRow TMD是读取单条记录
-	//rows, err := stmt.Query()
-	//if err != nil {
-	//	fmt.Println("Error reading rows: " + err.Error())
-	//}
-	//defer stmt.Close()
-	//
-	//count := 0
-	//for rows.Next() {
-	//	var 项目名称 string
-	//	var 项目编码 string
-	//	err := rows.Scan(&项目名称, &项目编码)
-	//	if err != nil {
-	//		log.Fatal("Scan failed:", err.Error())
-	//	}
-	//	fmt.Println(项目名称, 项目编码)
-	//	count++
-	//}
-
-	// 获取数据
-	//connectToTheDatabase()
-	//defer db.Close()
-	// 发送数据
-	qingqingRanchIncomeDaily(n)
-	//fmt.Println(getProductSalesData())
 }
 
 var (
@@ -406,7 +381,7 @@ func getProductSalesData(Start, End string) (sa string) {
 	//WHERE ls.DDEALDT >= '%v'
 	//        AND ls.DDEALDT <= '%v'
 	//GROUP BY  v.sgzonename, ls.NDEALTYPE , DATENAME(YEAR, ls.DDEALDT) , Convert(nvarchar(7), ls.DDEALDT, 120) , convert(nvarchar(10), ls.DDEALDT, 121) , ls.NTERMINALID , ls.ISRETURN , ls.NEMPID, m.NPAYMENTTYPE `,Start, End))
-	stmt, err := db.Prepare(fmt.Sprintf(`SELECT abcd.营业点,abcd.systype,sum(abcd.amount) from (SELECT v.sgzonename 营业点,
+	stmt, err := db.Prepare(fmt.Sprintf(`SELECT abcd.营业点,abcd.systype,sum(abcd.amount) amount from (SELECT v.sgzonename 营业点,
     CASE ls.NDEALTYPE
     WHEN 1 THEN
     '零售系统'
