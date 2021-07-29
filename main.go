@@ -31,8 +31,8 @@ workwxboot.exe stop
 // 数据库连接参数变量
 var (
 	server = "127.0.0.1"
-	port   = "1433"
-	//port     = "1437" // debug
+	//port   = "1433"
+	port     = "1437" // debug
 	user     = "sa"
 	password = "abc123."
 	database = "Galasys"
