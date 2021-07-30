@@ -31,8 +31,8 @@ workwxboot.exe stop
 // 数据库连接参数变量
 var (
 	server = "127.0.0.1"
-	//port   = "1433"
-	port     = "1437" // debug
+	port   = "1433"
+	//port     = "1437" // debug
 	user     = "sa"
 	password = "abc123."
 	database = "Galasys"
@@ -44,7 +44,7 @@ var crontab *cron.Cron
 
 func init() {
 	// 初始化连接数据库
-	connectToTheDatabase()
+	//connectToTheDatabase()
 }
 
 // region 注册服务相关
@@ -167,7 +167,10 @@ func scheduledTasks() {
 	// 定义定时器调用的任务函数
 	task := func() {
 		// 获取数据并发送
+		connectToTheDatabase()
+		defer db.Close()
 		qingqingRanchIncomeDaily("d")
+
 		//fmt.Println("hello world", time.Now())
 	}
 	//定时任务 每天早上8:30执行
@@ -180,8 +183,11 @@ func scheduledTasks() {
 	// 定时任务是另起协程执行的,这里使用 select 简答阻塞.实际开发中需要
 	// 根据实际情况进行控制
 	//crontab.AddFunc("*/5 * * * * ?", func() { fmt.Println("hello world", time.Now()) })
+	//crontab.AddFunc("*/5 * * * * ?", func() { qingqingRanchIncomeDaily("d") })
 	crontab.AddFunc("0 1 8 1 * ?", func() {
 		// 每月1日上午八点零一分获取上月整月数据
+		connectToTheDatabase()
+		defer db.Close()
 		qingqingRanchIncomeDaily("m")
 	})
 	select {} //阻塞主线程停止
