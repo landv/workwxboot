@@ -236,7 +236,7 @@ func getGateData(Start, End string) (sa string) {
 	bbb.*,
 	(bbb.价格 * bbb.数量)as 总价
 from
-(select abcd.项目名称,isnull(abcd.价格,0) 价格 ,COUNT(abcd.价格) as 数量  from (SELECT 
+(select isnull(abcd.项目名称,0) 项目名称,isnull(abcd.价格,0) 价格 ,COUNT(abcd.项目名称) as 数量  from (SELECT 
         CASE WHEN LEN(GFA.SREMARK) = 18 THEN GFA.SREMARK 
 		WHEN LEN(GFTOD.BindCard) = 18 THEN GFTOD.BindCard 
 		WHEN TWB.TWB_MSG = 'IDCARD' AND LEN(TWB.TWB_ID) = 18 THEN TWB.TWB_ID 
@@ -317,7 +317,7 @@ from
 	--order by  TWB.TWB_SYSTIME
 	)abcd
 	GROUP by abcd.项目名称 ,abcd.价格
-	)bbb`, Start, End))
+	)bbb where bbb.项目名称 <>'0'`, Start, End))
 	if err != nil {
 		log.Printf("\nPrepare failed:%T %+v\n", err, err)
 	}
